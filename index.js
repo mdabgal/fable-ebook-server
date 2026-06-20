@@ -7,7 +7,7 @@ const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const app = express();
 const port = process.env.PORT || 5000;
 
-// middleware
+
 app.use(cors());
 app.use(express.json());
 
@@ -16,7 +16,7 @@ app.get("/", (req, res) => {
   res.send("Fable Ebook Server Running...");
 });
 
-// mongo uri
+
 const uri = process.env.MONGO_DB_URI;
 
 // client
@@ -28,10 +28,33 @@ const client = new MongoClient(uri, {
   },
 });
 
-// collections
+
 let db;
 let ebooksCollection;
 let usersCollection; 
+let purchasesCollection;
+
+
+
+// const jwt = require("jsonwebtoken");
+
+// const verifyToken = (req, res, next) => {
+//   const authHeader = req.headers.authorization;
+
+//   if (!authHeader || !authHeader.startsWith("Bearer ")) {
+//     return res.status(401).send({ message: "Unauthorized" });
+//   }
+
+//   const token = authHeader.split(" ")[1];
+
+//   try {
+//     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+//     req.user = decoded;
+//     next();
+//   } catch (error) {
+//     return res.status(401).send({ message: "Invalid token" });
+//   }
+// };
 
 // connect db
 async function run() {
@@ -40,8 +63,9 @@ async function run() {
 
     db = client.db(process.env.AUTH_DB_NAME);
     ebooksCollection = db.collection("ebooks");
-    usersCollection = db.collection("users"); 
-
+    usersCollection = db.collection("user"); 
+    purchasesCollection = db.collection("purchases");
+    
     console.log("MongoDB Connected Successfully");
     console.log("DB Name:", db.databaseName);
 
@@ -54,11 +78,9 @@ async function run() {
 run();
 
 
-// ============================
-// 📚 EBOOK APIs (CRUD)
-// ============================
 
-// 1. GET FEATURED EBOOKS (লেটেস্ট ৬টি বই দেখানোর জন্য)
+
+
 app.get("/ebooks/featured", async (req, res) => {
   try {
     const result = await ebooksCollection
@@ -74,18 +96,99 @@ app.get("/ebooks/featured", async (req, res) => {
 });
 
 
-// 2. GET ALL EBOOKS
+// // 2. GET ALL EBOOKS
+// app.get("/ebooks", async (req, res) => {
+//   try {
+//     const result = await ebooksCollection.find().toArray();
+//     res.send(result);
+//   } catch (error) {
+//     res.status(500).send({ error: "Failed to get ebooks" });
+//   }
+// });
+
+
+app.patch("/users/verify-writer", async (req, res) => {
+  const { email } = req.body;
+
+  await usersCollection.updateOne(
+    { email },
+    {
+      $set: {
+        role: "writer",
+        writerVerified: true
+      }
+    }
+  );
+
+  res.send({ success: true });
+});
+
+
 app.get("/ebooks", async (req, res) => {
   try {
-    const result = await ebooksCollection.find().toArray();
-    res.send(result);
+    const { search, genre, minPrice, maxPrice, availability, sortBy, page = 1, limit = 6 } = req.query;
+
+    let query = {};
+
+  
+    if (search) {
+      query.$or = [
+        { title: { $regex: search, $options: "i" } },
+        { author: { $regex: search, $options: "i" } }
+      ];
+    }
+
+    if (genre) {
+      query.genre = genre;
+    }
+
+    if (minPrice || maxPrice) {
+      query.price = {};
+      if (minPrice) query.price.$gte = Number(minPrice);
+      if (maxPrice) query.price.$lte = Number(maxPrice);
+    }
+
+    if (availability) {
+      query.availability = availability;
+    }
+
+    let sortObj = {};
+    if (sortBy === "newest") {
+      sortObj._id = -1; 
+    } else if (sortBy === "priceLowHigh") {
+      sortObj.price = 1;
+    } else if (sortBy === "priceHighLow") {
+      sortObj.price = -1;
+    } else {
+      sortObj._id = -1;
+    }
+
+    const pageNum = Number(page);
+    const limitNum = Number(limit);
+    const skip = (pageNum - 1) * limitNum;
+
+    const totalBooks = await ebooksCollection.countDocuments(query);
+    const books = await ebooksCollection
+      .find(query)
+      .sort(sortObj)
+      .skip(skip)
+      .limit(limitNum)
+      .toArray();
+
+    res.send({
+      books,
+      totalBooks,
+      totalPages: Math.ceil(totalBooks / limitNum),
+      currentPage: pageNum
+    });
   } catch (error) {
-    res.status(500).send({ error: "Failed to get ebooks" });
+    res.status(500).send({ error: "Failed to fetch ebooks" });
   }
 });
 
 
-// 3. GET SINGLE EBOOK
+
+
 app.get("/ebooks/:id", async (req, res) => {
   try {
     const id = req.params.id;
@@ -99,7 +202,6 @@ app.get("/ebooks/:id", async (req, res) => {
 });
 
 
-// 4. ADD EBOOK (Writer Option)
 app.post("/ebooks", async (req, res) => {
   try {
     const data = req.body;
@@ -107,7 +209,7 @@ app.post("/ebooks", async (req, res) => {
     const result = await ebooksCollection.insertOne({
       ...data,
       createdAt: new Date(),
-      status: "published", // ডিফল্টভাবে পাবলিশড থাকবে
+      status: "published", 
     });
 
     res.send(result);
@@ -117,13 +219,12 @@ app.post("/ebooks", async (req, res) => {
 });
 
 
-// 5. UPDATE EBOOK (Writer/Admin Edit Option - নতুন যুক্ত করা হয়েছে)
+
 app.put("/ebooks/:id", async (req, res) => {
   try {
     const id = req.params.id;
     const updatedData = req.body;
     
-    // _id ফিল্ডটি বডি থেকে ডিলিট করে নেওয়া নিরাপদ যেন মঙ্গোডিবি এরর না দেয়
     delete updatedData._id;
 
     const result = await ebooksCollection.updateOne(
@@ -142,29 +243,13 @@ app.put("/ebooks/:id", async (req, res) => {
 });
 
 
-// 6. TOGGLE PUBLISH/UNPUBLISH STATUS (নতুন যুক্ত করা হয়েছে)
-// app.patch("/ebooks/:id/status", async (req, res) => {
-//   try {
-//     const id = req.params.id;
-//     const { status } = req.body; // ফ্রন্টএন্ড থেকে "published" অথবা "unpublished" আসবে
 
-//     const result = await ebooksCollection.updateOne(
-//       { _id: new ObjectId(id) },
-//       { $set: { status: status } }
-//     );
-
-//     res.send(result);
-//   } catch (error) {
-//     res.status(500).send({ error: "Failed to update status" });
-//   }
-// });
-// 🔄 ইবুক পাবলিশ/আনপাবলিশ স্ট্যাটাস আপডেট API (PATCH)
 app.patch("/ebooks/:id/status", async (req, res) => {
   try {
     const id = req.params.id;
     const { status } = req.body; 
 
-    const filter = { _Id: new ObjectId(id) }; 
+    const filter = { _id: new ObjectId(id) }; 
     const updateDoc = {
       $set: {
         status: status,
@@ -183,7 +268,47 @@ app.patch("/ebooks/:id/status", async (req, res) => {
   }
 });
 
-// 7. DELETE AN EBOOK (Writer/Admin Option)
+app.get("/writer/sales-history", async (req, res) => {
+  try {
+    const { email } = req.query; 
+    if (!email) {
+      return res.status(400).send({ error: "Writer email is required" });
+    }
+
+   
+    const sales = await purchasesCollection
+      .find({ writerEmail: email })
+      .sort({ date: -1 }) 
+      .toArray();
+
+    res.send(sales);
+  } catch (error) {
+    res.status(500).send({ error: "Failed to fetch sales history" });
+  }
+});
+
+
+app.get("/writer/books", async (req, res) => {
+  try {
+    const { email } = req.query;
+    if (!email) {
+      return res.status(400).send({ error: "Writer email is required" });
+    }
+    
+  
+    const query = { writerEmail: email }; 
+    const result = await ebooksCollection.find(query).toArray();
+    
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({ error: "Failed to fetch writer's books" });
+  }
+});
+
+
+
+
+
 app.delete("/ebooks/:id", async (req, res) => {
   try {
     const id = req.params.id;
@@ -202,11 +327,7 @@ app.delete("/ebooks/:id", async (req, res) => {
 });
 
 
-// ============================
-// 👥 USER MANAGEMENT APIs
-// ============================
 
-// GET ALL USERS (Admin dashboard এর জন্য)
 app.get("/users", async (req, res) => {
   try {
     const result = await usersCollection.find().toArray();
@@ -219,11 +340,10 @@ app.get("/users", async (req, res) => {
 });
 
 
-// UPDATE USER ROLE (Admin manage users এর জন্য - নতুন যুক্ত করা হয়েছে)
 app.patch("/users/:id/role", async (req, res) => {
   try {
     const id = req.params.id;
-    const { role } = req.body; // ফ্রন্টএন্ড থেকে "reader", "writer", অথবা "admin" আসবে
+    const { role } = req.body; 
 
     const result = await usersCollection.updateOne(
       { _id: new ObjectId(id) },
@@ -237,7 +357,90 @@ app.patch("/users/:id/role", async (req, res) => {
 });
 
 
-// start server
+
+// admin
+
+app.delete("/users/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+
+    const result = await usersCollection.deleteOne({
+      _id: new ObjectId(id),
+    });
+
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({
+      error: "Failed to delete user",
+    });
+  }
+});
+
+
+app.get("/admin/ebooks", async (req, res) => {
+  try {
+    const ebooks = await ebooksCollection.find().toArray();
+    res.send(ebooks);
+  } catch (error) {
+    res.status(500).send({ error: "Failed to fetch ebooks" });
+  }
+});
+
+
+app.patch("/ebooks/:id/status", async (req, res) => {
+  try {
+    const id = req.params.id;
+    const { status } = req.body;
+
+    const result = await ebooksCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { status } }
+    );
+
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({ error: "Failed to update status" });
+  }
+});
+
+
+
+app.get("/admin/transactions", async (req, res) => {
+  try {
+    const transactions = await purchasesCollection
+      .find()
+      .sort({ date: -1 })
+      .toArray();
+
+    res.send(transactions);
+  } catch (error) {
+    res.status(500).send({ error: "Failed to fetch transactions" });
+  }
+});
+
+
+
+app.post("/purchase", async (req, res) => {
+  try {
+    const { userEmail, writerEmail, amount } = req.body;
+
+    const result = await purchasesCollection.insertOne({
+      transactionId: new ObjectId().toString(),
+      type: "purchase",
+      userEmail,
+      writerEmail,
+      amount,
+      date: new Date(),
+    });
+
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({ error: "Purchase failed" });
+  }
+});
+
+
+
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
 });
