@@ -340,21 +340,21 @@ app.get("/users", async (req, res) => {
 });
 
 
-app.patch("/users/:id/role", async (req, res) => {
-  try {
-    const id = req.params.id;
-    const { role } = req.body; 
+// app.patch("/users/:id/role", async (req, res) => {
+//   try {
+//     const id = req.params.id;
+//     const { role } = req.body; 
 
-    const result = await usersCollection.updateOne(
-      { _id: new ObjectId(id) },
-      { $set: { role: role } }
-    );
+//     const result = await usersCollection.updateOne(
+//       { _id: new ObjectId(id) },
+//       { $set: { role: role } }
+//     );
 
-    res.send(result);
-  } catch (error) {
-    res.status(500).send({ error: "Failed to update user role" });
-  }
-});
+//     res.send(result);
+//   } catch (error) {
+//     res.status(500).send({ error: "Failed to update user role" });
+//   }
+// });
 
 
 
@@ -438,6 +438,9 @@ app.post("/purchase", async (req, res) => {
     res.status(500).send({ error: "Purchase failed" });
   }
 });
+
+
+
 
 
 
