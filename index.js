@@ -256,7 +256,7 @@ app.get("/ebooks/:id", async (req, res) => {
 
 
 
-app.post("/ebooks", async (req, res) => {
+app.post("/ebooks", verifySessionToken, async (req, res) => {
   try {
     const data = req.body;
 
@@ -274,7 +274,7 @@ app.post("/ebooks", async (req, res) => {
 
 
 
-app.put("/ebooks/:id", async (req, res) => {
+app.put("/ebooks/:id",  verifySessionToken, async (req, res) => {
   try {
     const id = req.params.id;
     const updatedData = req.body;
@@ -324,50 +324,6 @@ app.patch("/ebooks/:id/status", async (req, res) => {
 
 
 
-// app.get("/writer/sales-history", async (req, res) => {
-//   try {
-//     const { email } = req.query;
-
-//     const sales = await purchasesCollection.aggregate([
-//       { $match: { writerEmail: email } },
-
-//       {
-//         $addFields: {
-//           bookObjectId: { $toObjectId: "$bookId" }
-//         }
-//       },
-
-//       {
-//         $lookup: {
-//           from: "ebooks",
-//           localField: "bookObjectId",
-//           foreignField: "_id",
-//           as: "ebook",
-//         },
-//       },
-
-//       { $unwind: "$ebook" },
-
-//       {
-//         $project: {
-//           _id: 1,
-//           readerEmail: "$userEmail",
-//           ebookTitle: "$ebook.title",
-//           genre: "$ebook.genre",
-//           price: "$amount",
-//           date: 1,
-//         },
-//       },
-
-//       { $sort: { date: -1 } },
-//     ]).toArray();
-
-//     res.send(sales);
-//   } catch (err) {
-//     console.log(err);
-//     res.status(500).send({ error: "Failed to fetch sales history" });
-//   }
-// });
 
 app.get("/writer/sales-history", async (req, res) => {
   try {
@@ -439,7 +395,7 @@ app.get("/writer/books", async (req, res) => {
 
 
 
-app.delete("/ebooks/:id", async (req, res) => {
+app.delete("/ebooks/:id", verifySessionToken, async (req, res) => {
   try {
     const id = req.params.id;
     const result = await ebooksCollection.deleteOne({
@@ -456,9 +412,22 @@ app.delete("/ebooks/:id", async (req, res) => {
   }
 });
 
+app.get("/users", verifySessionToken, async (req, res) => {
+  try {
+    if (req.user.role !== "admin") {
+      return res.status(403).send({ error: "Forbidden" });
+    }
+
+    const result = await usersCollection.find().toArray();
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({ error: "Failed to fetch users" });
+  }
+});
 
 
-app.get("/users", async (req, res) => {
+
+app.get("/users", verifySessionToken, async (req, res) => {
   try {
     const result = await usersCollection.find().toArray();
     console.log("Users Count:", result.length);
@@ -470,27 +439,13 @@ app.get("/users", async (req, res) => {
 });
 
 
-// app.patch("/users/:id/role", async (req, res) => {
-//   try {
-//     const id = req.params.id;
-//     const { role } = req.body; 
 
-//     const result = await usersCollection.updateOne(
-//       { _id: new ObjectId(id) },
-//       { $set: { role: role } }
-//     );
-
-//     res.send(result);
-//   } catch (error) {
-//     res.status(500).send({ error: "Failed to update user role" });
-//   }
-// });
 
 
 
 // admin
 
-app.delete("/users/:id", async (req, res) => {
+app.delete("/users/:id",  verifySessionToken, async (req, res) => {
   try {
     const id = req.params.id;
 
@@ -517,21 +472,6 @@ app.get("/admin/ebooks", async (req, res) => {
 });
 
 
-// app.patch("/ebooks/:id/status", async (req, res) => {
-//   try {
-//     const id = req.params.id;
-//     const { status } = req.body;
-
-//     const result = await ebooksCollection.updateOne(
-//       { _id: new ObjectId(id) },
-//       { $set: { status } }
-//     );
-
-//     res.send(result);
-//   } catch (error) {
-//     res.status(500).send({ error: "Failed to update status" });
-//   }
-// });
 
 
 
@@ -576,6 +516,53 @@ console.log(result,'result')
 
 
 
+// app.get("/reader/purchased-books", verifySessionToken, async (req, res) => {
+//   try {
+//     const books = await purchasesCollection.aggregate([
+//       {
+//         $match: {
+//           userEmail: req.user.email
+//         }
+//       },
+//       {
+//         $lookup: {
+//           from: "ebooks",
+//           localField: "bookId",
+//           foreignField: "_id",
+//           as: "ebook"
+//         }
+//       },
+//       {
+//         $unwind: "$ebook"
+//       },
+//       {
+//         $project: {
+//           _id: 1,
+//           purchaseDate: "$date",
+//           title: "$ebook.title",
+//           coverImage: "$ebook.coverImage",
+//           author: "$ebook.author",
+//           price: "$amount"
+//         }
+//       }
+//     ]).toArray();
+
+//     res.send(books);
+//   } catch (error) {
+//     res.status(500).send({ error: "Failed to fetch books" });
+//   }
+// });
+
+
+
+app.get('/my-purchase/:userEmail', async (req, res) => {
+	// more secure way: token -> user email
+	const email = req.params.userEmail
+  console.log({email})
+	const query = { userEmail: email }
+	const result = await purchasesCollection.find(query).toArray()
+	res.send(result)
+})
 
 
 app.listen(port, () => {
