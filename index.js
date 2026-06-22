@@ -3,6 +3,7 @@ const cors = require("cors");
 require("dotenv").config();
 
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+const { jwtVerify, createRemoteJWKSet } = require("jose-cjs");
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -29,12 +30,94 @@ const client = new MongoClient(uri, {
 });
 
 
+
+
+const JWKS = createRemoteJWKSet(
+  new URL(`${process.env.CLIENT_URL}/api/auth/jwks`),
+);
+
+const verifyToken = async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader || !authHeader.startsWith("Bearer")) {
+    return res.status(401).json({ msg: "Unauthorized" });
+  }
+
+  // ["Bearer", "xjasasdhsagdydsav"]
+
+  const token = authHeader.split(" ")[1];
+
+  if (!token) {
+    return res.status(401).json({ msg: "Unauthorized" });
+  }
+
+  try {
+    const { payload } = await jwtVerify(token, JWKS);
+    req.user = payload;
+
+    next();
+  } catch (error) {
+    console.log(error);
+    return res.status(401).json({ msg: "Unauthorized" });
+  }
+};
+
+
+
+
+
+
+
 let db;
 let ebooksCollection;
 let usersCollection; 
 let purchasesCollection;
+let sessionCollection;
+
+db = client.db(process.env.AUTH_DB_NAME);
+ebooksCollection = db.collection("ebooks");
+usersCollection = db.collection("user"); 
+purchasesCollection = db.collection("purchases");
+
+sessionCollection = db.collection('session');
+
+console.log("MongoDB Connected Successfully");
+console.log("DB Name:", db.databaseName);
+const verifySessionToken = async (req, res, next) => {
+
+            const authHeader = req.headers?.authorization;
+            if (!authHeader) {
+                return res.status(401).send({ message: 'unauthorized access' })
+            }
+
+            const token = authHeader.split(' ')[1]
+
+            if (!token) {
+                return res.status(401).send({ message: 'unauthorized access' })
+            }
+
+            const query = { token: token }
+            const session = await sessionCollection.findOne(query);
+
+              if (!session) {
+                return res.status(401).send({ message: 'unauthorized access' })
+            }
+
+            const userId = session.userId;
 
 
+            const userQuery = {
+                _id: userId
+            }
+
+            const user = await usersCollection.findOne(userQuery);
+              if (!user) {
+                return res.status(401).send({ message: 'unauthorized access' })
+            }
+            // set data in the req object
+            req.user = user;
+            next();
+        }
 
 // const jwt = require("jsonwebtoken");
 
@@ -56,26 +139,6 @@ let purchasesCollection;
 //   }
 // };
 
-// connect db
-async function run() {
-  try {
-    await client.connect();
-
-    db = client.db(process.env.AUTH_DB_NAME);
-    ebooksCollection = db.collection("ebooks");
-    usersCollection = db.collection("user"); 
-    purchasesCollection = db.collection("purchases");
-    
-    console.log("MongoDB Connected Successfully");
-    console.log("DB Name:", db.databaseName);
-
-    await client.db("admin").command({ ping: 1 });
-  } catch (error) {
-    console.log("DB Error:", error);
-  }
-}
-
-run();
 
 
 
@@ -95,16 +158,6 @@ app.get("/ebooks/featured", async (req, res) => {
   }
 });
 
-
-// // 2. GET ALL EBOOKS
-// app.get("/ebooks", async (req, res) => {
-//   try {
-//     const result = await ebooksCollection.find().toArray();
-//     res.send(result);
-//   } catch (error) {
-//     res.status(500).send({ error: "Failed to get ebooks" });
-//   }
-// });
 
 
 app.patch("/users/verify-writer", async (req, res) => {
@@ -202,6 +255,7 @@ app.get("/ebooks/:id", async (req, res) => {
 });
 
 
+
 app.post("/ebooks", async (req, res) => {
   try {
     const data = req.body;
@@ -268,21 +322,97 @@ app.patch("/ebooks/:id/status", async (req, res) => {
   }
 });
 
+
+
+// app.get("/writer/sales-history", async (req, res) => {
+//   try {
+//     const { email } = req.query;
+
+//     const sales = await purchasesCollection.aggregate([
+//       { $match: { writerEmail: email } },
+
+//       {
+//         $addFields: {
+//           bookObjectId: { $toObjectId: "$bookId" }
+//         }
+//       },
+
+//       {
+//         $lookup: {
+//           from: "ebooks",
+//           localField: "bookObjectId",
+//           foreignField: "_id",
+//           as: "ebook",
+//         },
+//       },
+
+//       { $unwind: "$ebook" },
+
+//       {
+//         $project: {
+//           _id: 1,
+//           readerEmail: "$userEmail",
+//           ebookTitle: "$ebook.title",
+//           genre: "$ebook.genre",
+//           price: "$amount",
+//           date: 1,
+//         },
+//       },
+
+//       { $sort: { date: -1 } },
+//     ]).toArray();
+
+//     res.send(sales);
+//   } catch (err) {
+//     console.log(err);
+//     res.status(500).send({ error: "Failed to fetch sales history" });
+//   }
+// });
+
 app.get("/writer/sales-history", async (req, res) => {
   try {
-    const { email } = req.query; 
-    if (!email) {
-      return res.status(400).send({ error: "Writer email is required" });
-    }
+    const { email } = req.query;
 
-   
-    const sales = await purchasesCollection
-      .find({ writerEmail: email })
-      .sort({ date: -1 }) 
-      .toArray();
+    if (!email) {
+      return res.status(400).send({ error: "Email required" });
+    }
+    console.log(email)
+
+    const sales = await purchasesCollection.aggregate([
+      {
+        $match: { writerEmail: email }
+      },
+      {
+        $lookup: {
+          from: "ebooks",
+          localField: "bookId",
+          foreignField: "_id",
+          as: "ebook"
+        }
+      },
+      {
+        $unwind: {
+          path: "$ebook",
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $project: {
+          _id: 1,
+          readerEmail: "$userEmail",
+          ebookTitle: "$ebook.title",
+          price: "$amount",
+          date: 1
+        }
+      },
+      {
+        $sort: { date: -1 }
+      }
+    ]).toArray();
 
     res.send(sales);
-  } catch (error) {
+  } catch (err) {
+    console.log(err);
     res.status(500).send({ error: "Failed to fetch sales history" });
   }
 });
@@ -387,21 +517,21 @@ app.get("/admin/ebooks", async (req, res) => {
 });
 
 
-app.patch("/ebooks/:id/status", async (req, res) => {
-  try {
-    const id = req.params.id;
-    const { status } = req.body;
+// app.patch("/ebooks/:id/status", async (req, res) => {
+//   try {
+//     const id = req.params.id;
+//     const { status } = req.body;
 
-    const result = await ebooksCollection.updateOne(
-      { _id: new ObjectId(id) },
-      { $set: { status } }
-    );
+//     const result = await ebooksCollection.updateOne(
+//       { _id: new ObjectId(id) },
+//       { $set: { status } }
+//     );
 
-    res.send(result);
-  } catch (error) {
-    res.status(500).send({ error: "Failed to update status" });
-  }
-});
+//     res.send(result);
+//   } catch (error) {
+//     res.status(500).send({ error: "Failed to update status" });
+//   }
+// });
 
 
 
@@ -420,21 +550,25 @@ app.get("/admin/transactions", async (req, res) => {
 
 
 
-app.post("/purchase", async (req, res) => {
-  try {
-    const { userEmail, writerEmail, amount } = req.body;
 
+app.post("/purchase", verifySessionToken,  async (req, res) => {
+  try {
+    const { writerEmail, amount, bookId } = req.body;
+console.log("PURCHASE HIT:", req.body);
+console.log("USER:", req.user);
     const result = await purchasesCollection.insertOne({
       transactionId: new ObjectId().toString(),
       type: "purchase",
-      userEmail,
+       userEmail: req.body.userEmail,
       writerEmail,
       amount,
+      bookId,
       date: new Date(),
     });
-
+console.log(result,'result')
     res.send(result);
   } catch (error) {
+    console.log(error)
     res.status(500).send({ error: "Purchase failed" });
   }
 });
@@ -447,3 +581,9 @@ app.post("/purchase", async (req, res) => {
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
 });
+
+
+
+ 
+
+
