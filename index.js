@@ -63,23 +63,21 @@ const verifyToken = async (req, res, next) => {
 };
 
 
-
-
-
-
-
 let db;
 let ebooksCollection;
 let usersCollection; 
 let purchasesCollection;
 let sessionCollection;
+let booksCollection;
+let bookmarksCollection;
 
 db = client.db(process.env.AUTH_DB_NAME);
 ebooksCollection = db.collection("ebooks");
 usersCollection = db.collection("user"); 
 purchasesCollection = db.collection("purchases");
-
+booksCollection= db.collection("booksCollection")
 sessionCollection = db.collection('session');
+bookmarksCollection= db.collection('bookmarksCollection')
 
 console.log("MongoDB Connected Successfully");
 console.log("DB Name:", db.databaseName);
@@ -114,30 +112,12 @@ const verifySessionToken = async (req, res, next) => {
               if (!user) {
                 return res.status(401).send({ message: 'unauthorized access' })
             }
+            console.log(user)
             // set data in the req object
             req.user = user;
             next();
         }
 
-// const jwt = require("jsonwebtoken");
-
-// const verifyToken = (req, res, next) => {
-//   const authHeader = req.headers.authorization;
-
-//   if (!authHeader || !authHeader.startsWith("Bearer ")) {
-//     return res.status(401).send({ message: "Unauthorized" });
-//   }
-
-//   const token = authHeader.split(" ")[1];
-
-//   try {
-//     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-//     req.user = decoded;
-//     next();
-//   } catch (error) {
-//     return res.status(401).send({ message: "Invalid token" });
-//   }
-// };
 
 
 
@@ -328,44 +308,87 @@ app.patch("/ebooks/:id/status", async (req, res) => {
 app.get("/writer/sales-history", async (req, res) => {
   try {
     const { email } = req.query;
-
+console.log(email)
     if (!email) {
       return res.status(400).send({ error: "Email required" });
     }
     console.log(email)
 
-    const sales = await purchasesCollection.aggregate([
-      {
-        $match: { writerEmail: email }
-      },
-      {
-        $lookup: {
-          from: "ebooks",
-          localField: "bookId",
-          foreignField: "_id",
-          as: "ebook"
-        }
-      },
-      {
-        $unwind: {
-          path: "$ebook",
-          preserveNullAndEmptyArrays: true
-        }
-      },
-      {
-        $project: {
-          _id: 1,
-          readerEmail: "$userEmail",
-          ebookTitle: "$ebook.title",
-          price: "$amount",
-          date: 1
-        }
-      },
-      {
-        $sort: { date: -1 }
-      }
-    ]).toArray();
+    // const sales = await purchasesCollection.aggregate([
+    //   {
+    //     $match: { writerEmail: email }
+    //   },
+    //   {
+    //     $lookup: {
+    //       from: "ebooks",
+    //       localField: "bookId",
+    //       foreignField: "_id",
+    //       as: "ebook"
+    //     }
+    //   },
+    //   {
+    //     $unwind: {
+    //       path: "$ebook",
+    //       preserveNullAndEmptyArrays: true
+    //     }
+    //   },
+    //   {
+    //     $project: {
+    //       _id: 1,
+    //       readerEmail: "$userEmail",
+    //       ebookTitle: "$ebook.title",
+    //       price: "$amount",
+    //       date: 1
+    //     }
+    //   },
+    //   {
+    //     $sort: { date: -1 }
+    //   }
+    // ]).toArray();
 
+const sales = await purchasesCollection.aggregate([
+  {
+    $match: {
+      writerEmail: email
+    }
+  },
+  {
+    $addFields: {
+      bookObjectId: {
+        $toObjectId: "$bookId"
+      }
+    }
+  },
+  {
+    $lookup: {
+      from: "ebooks",
+      localField: "bookObjectId",
+      foreignField: "_id",
+      as: "ebook"
+    }
+  },
+  {
+    $unwind: "$ebook"
+  },
+  {
+    $project: {
+      _id: 1,
+      readerEmail: "$userEmail",
+      ebookTitle: "$ebook.title",
+      price: "$amount",
+      date: 1
+    }
+  },
+  {
+    $sort: {
+      date: -1
+    }
+  }
+]).toArray();
+
+
+    
+console.log(sales,'sales data')
     res.send(sales);
   } catch (err) {
     console.log(err);
@@ -377,6 +400,7 @@ app.get("/writer/sales-history", async (req, res) => {
 app.get("/writer/books", async (req, res) => {
   try {
     const { email } = req.query;
+    console.log(email)
     if (!email) {
       return res.status(400).send({ error: "Writer email is required" });
     }
@@ -412,11 +436,11 @@ app.delete("/ebooks/:id", verifySessionToken, async (req, res) => {
   }
 });
 
-app.get("/users", verifySessionToken, async (req, res) => {
+app.get("/users", async (req, res) => {
   try {
-    if (req.user.role !== "admin") {
-      return res.status(403).send({ error: "Forbidden" });
-    }
+    // if (req.user.role !== "admin") {
+    //   return res.status(403).send({ error: "Forbidden" });
+    // }
 
     const result = await usersCollection.find().toArray();
     res.send(result);
@@ -494,8 +518,14 @@ app.get("/admin/transactions", async (req, res) => {
 app.post("/purchase", verifySessionToken,  async (req, res) => {
   try {
     const { writerEmail, amount, bookId } = req.body;
-console.log("PURCHASE HIT:", req.body);
-console.log("USER:", req.user);
+
+
+    const book = await ebooksCollection.findOne({
+      _id: new ObjectId(bookId),
+    });
+console.log("BOOK DATA:", book);
+console.log("BOOK ID:", bookId);
+console.log("BOOK DATA:", book);
     const result = await purchasesCollection.insertOne({
       transactionId: new ObjectId().toString(),
       type: "purchase",
@@ -503,6 +533,11 @@ console.log("USER:", req.user);
       writerEmail,
       amount,
       bookId,
+    
+    ebookName: book?.title || book?.ebookName,
+writer: book?.author || book?.writerName,
+coverImage: book?.coverImage || book?.image,
+
       date: new Date(),
     });
 console.log(result,'result')
@@ -563,6 +598,20 @@ app.get('/my-purchase/:userEmail', async (req, res) => {
 	const result = await purchasesCollection.find(query).toArray()
 	res.send(result)
 })
+
+
+app.get("/bookmarks/:email", async (req, res) => {
+  const email = req.params.email;
+
+  const result = await bookmarksCollection.find({
+    userEmail: email
+  }).toArray();
+
+  res.send(result);
+});
+
+
+
 
 
 app.listen(port, () => {
