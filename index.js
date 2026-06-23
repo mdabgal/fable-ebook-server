@@ -314,38 +314,7 @@ console.log(email)
     }
     console.log(email)
 
-    // const sales = await purchasesCollection.aggregate([
-    //   {
-    //     $match: { writerEmail: email }
-    //   },
-    //   {
-    //     $lookup: {
-    //       from: "ebooks",
-    //       localField: "bookId",
-    //       foreignField: "_id",
-    //       as: "ebook"
-    //     }
-    //   },
-    //   {
-    //     $unwind: {
-    //       path: "$ebook",
-    //       preserveNullAndEmptyArrays: true
-    //     }
-    //   },
-    //   {
-    //     $project: {
-    //       _id: 1,
-    //       readerEmail: "$userEmail",
-    //       ebookTitle: "$ebook.title",
-    //       price: "$amount",
-    //       date: 1
-    //     }
-    //   },
-    //   {
-    //     $sort: { date: -1 }
-    //   }
-    // ]).toArray();
-
+   
 const sales = await purchasesCollection.aggregate([
   {
     $match: {
@@ -600,6 +569,48 @@ app.get('/my-purchase/:userEmail', async (req, res) => {
 })
 
 
+
+app.post("/bookmarks", async (req, res) => {
+  try {
+    const { userEmail, bookId } = req.body;
+
+    const existing = await bookmarksCollection.findOne({
+      userEmail,
+      bookId,
+    });
+
+    if (existing) {
+      return res.status(400).send({
+        message: "Already bookmarked",
+      });
+    }
+
+    const book = await ebooksCollection.findOne({
+      _id: new ObjectId(bookId),
+    });
+
+    const result = await bookmarksCollection.insertOne({
+      userEmail,
+      bookId,
+      title: book.title,
+      author: book.author,
+      image: book.image,
+      price: book.price,
+      createdAt: new Date(),
+    });
+
+    res.send(result);
+  } catch (error) {
+    console.log(error);
+    res.status(500).send({
+      message: "Failed to bookmark ebook",
+    });
+  }
+});
+
+
+
+
 app.get("/bookmarks/:email", async (req, res) => {
   const email = req.params.email;
 
@@ -608,6 +619,22 @@ app.get("/bookmarks/:email", async (req, res) => {
   }).toArray();
 
   res.send(result);
+});
+
+
+
+app.delete("/bookmarks/:id", async (req, res) => {
+  try {
+    const result = await bookmarksCollection.deleteOne({
+      _id: new ObjectId(req.params.id),
+    });
+
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({
+      message: "Failed to remove bookmark",
+    });
+  }
 });
 
 
