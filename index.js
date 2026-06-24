@@ -666,80 +666,118 @@ app.delete("/bookmarks/:id",verifySessionToken,  async (req, res) => {
 
 
 
+// app.get("/admin/stats", verifySessionToken, async (req, res) => {
+//   try {
+//     // Parallel execution for faster response
+//     const [users, writers, ebooks, revenueResult] = await Promise.all([
+//       usersCollection.countDocuments(),
+//       usersCollection.countDocuments({ role: "writer" }),
+//       ebooksCollection.countDocuments(),
+//       purchasesCollection.aggregate([
+//         { $group: { _id: null, total: { $sum: { $toDouble: "$amount" } } } }
+//       ]).toArray()
+//     ]);
+
+//     res.send({
+//       users,
+//       writers,
+//       ebooks,
+//       revenue: revenueResult[0]?.total || 0,
+//     });
+//   } catch (error) {
+//     console.error("Error in admin stats:", error);
+//     res.status(500).send({ error: "Failed to load admin stats" });
+//   }
+// });
+
 app.get("/admin/stats", verifySessionToken, async (req, res) => {
   try {
-    // Parallel execution for faster response
-    const [users, writers, ebooks, revenueResult] = await Promise.all([
+    const [
+      users,
+      writers,
+      totalEbooks,
+      totalSold,
+      revenueResult,
+      monthlySales,
+      genreData,
+    ] = await Promise.all([
       usersCollection.countDocuments(),
-      usersCollection.countDocuments({ role: "writer" }),
+
+      usersCollection.countDocuments({
+        role: "writer",
+      }),
+
       ebooksCollection.countDocuments(),
-      purchasesCollection.aggregate([
-        { $group: { _id: null, total: { $sum: { $toDouble: "$amount" } } } }
-      ]).toArray()
+
+      purchasesCollection.countDocuments(),
+
+      purchasesCollection
+        .aggregate([
+          {
+            $group: {
+              _id: null,
+              total: {
+                $sum: {
+                  $toDouble: "$amount",
+                },
+              },
+            },
+          },
+        ])
+        .toArray(),
+
+      purchasesCollection
+        .aggregate([
+          {
+            $group: {
+              _id: {
+                $month: "$date",
+              },
+              total: {
+                $sum: {
+                  $toDouble: "$amount",
+                },
+              },
+            },
+          },
+          {
+            $sort: {
+              _id: 1,
+            },
+          },
+        ])
+        .toArray(),
+
+      ebooksCollection
+        .aggregate([
+          {
+            $group: {
+              _id: "$genre",
+              count: {
+                $sum: 1,
+              },
+            },
+          },
+        ])
+        .toArray(),
     ]);
 
     res.send({
       users,
       writers,
-      ebooks,
+      totalEbooks,
+      totalSold,
       revenue: revenueResult[0]?.total || 0,
+      monthlySales,
+      genreData,
     });
   } catch (error) {
-    console.error("Error in admin stats:", error);
-    res.status(500).send({ error: "Failed to load admin stats" });
+    console.log(error);
+    res.status(500).send({
+      error: "Failed to load dashboard stats",
+    });
   }
 });
-
-// Admin Stats Route
-
-
-
-// app.get('/admin/stats', verifySessionToken, verifyAdmin, async (req, res) => {
-//     try {
-//         // ১. মোট কার্ডের ডাটা (Analytics Overview)
-//         const totalUsers = await usersCollection.countDocuments();
-//         const totalWriters = await usersCollection.countDocuments({ role: 'writer' });
-//         const totalEbooks = await ebooksCollection.countDocuments();
-        
-//         // সব পেমেন্ট যোগ করে রেভিনিউ হিসাব করা
-//         const payments = await paymentsCollection.find().toArray();
-//         const totalRevenue = payments.reduce((sum, p) => sum + p.amount, 0);
-
-//         // ২. Monthly Sales Chart Data (Aggregation)
-//         const monthlySales = await paymentsCollection.aggregate([
-//             {
-//                 $group: {
-//                     _id: { $month: "$date" }, // মাসের ভিত্তিতে গ্রুপ করা
-//                     total: { $sum: "$amount" }
-//                 }
-//             },
-//             { $sort: { "_id": 1 } }
-//         ]).toArray();
-
-//         // ৩. Ebooks by Genre (Pie Chart Data)
-//         const genreData = await ebooksCollection.aggregate([
-//             {
-//                 $group: {
-//                     _id: "$genre",
-//                     count: { $sum: 1 }
-//                 }
-//             }
-//         ]).toArray();
-
-//         res.send({
-//             users: totalUsers,
-//             writers: totalWriters,
-//             ebooks: totalEbooks,
-//             revenue: totalRevenue,
-//             monthlySales,
-//             genreData
-//         });
-//     } catch (error) {
-//         res.status(500).send({ message: "Error fetching stats" });
-//     }
-// });
-
-
 
  
 app.listen(port, () => {
