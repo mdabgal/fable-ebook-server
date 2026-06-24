@@ -112,7 +112,7 @@ const verifySessionToken = async (req, res, next) => {
               if (!user) {
                 return res.status(401).send({ message: 'unauthorized access' })
             }
-            console.log(user)
+            // console.log(user)
             // set data in the req object
             req.user = user;
             next();
@@ -154,7 +154,33 @@ app.patch("/users/verify-writer", async (req, res) => {
   );
 
   res.send({ success: true });
+
+
 });
+
+
+app.patch('/users/:id/role', async (req, res) => {
+    const id = req.params.id;
+    const { role } = req.body;
+    
+    try {
+        const query = { _id: new ObjectId(id) };
+        const updateDoc = {
+            $set: {
+                role: role
+            },
+        };
+        const result = await usersCollection.updateOne(query, updateDoc);
+        res.send(result);
+    } catch (error) {
+        res.status(500).send({ message: "Failed to update role" });
+    }
+});
+
+
+
+
+
 
 
 app.get("/ebooks", async (req, res) => {
@@ -312,7 +338,7 @@ console.log(email)
     if (!email) {
       return res.status(400).send({ error: "Email required" });
     }
-    console.log(email)
+    // console.log(email)
 
    
 const sales = await purchasesCollection.aggregate([
@@ -357,7 +383,7 @@ const sales = await purchasesCollection.aggregate([
 
 
     
-console.log(sales,'sales data')
+// console.log(sales,'sales data')
     res.send(sales);
   } catch (err) {
     console.log(err);
@@ -423,7 +449,7 @@ app.get("/users", async (req, res) => {
 app.get("/users", verifySessionToken, async (req, res) => {
   try {
     const result = await usersCollection.find().toArray();
-    console.log("Users Count:", result.length);
+    // console.log("Users Count:", result.length);
     res.send(result);
   } catch (error) {
     console.log(error);
@@ -455,7 +481,7 @@ app.delete("/users/:id",  verifySessionToken, async (req, res) => {
 });
 
 
-app.get("/admin/ebooks", async (req, res) => {
+app.get("/admin/ebooks",  verifySessionToken, async (req, res) => {
   try {
     const ebooks = await ebooksCollection.find().toArray();
     res.send(ebooks);
@@ -468,7 +494,7 @@ app.get("/admin/ebooks", async (req, res) => {
 
 
 
-app.get("/admin/transactions", async (req, res) => {
+app.get("/admin/transactions", verifySessionToken, async (req, res) => {
   try {
     const transactions = await purchasesCollection
       .find()
@@ -559,12 +585,13 @@ console.log(result,'result')
 
 
 
-app.get('/my-purchase/:userEmail', async (req, res) => {
+app.get('/my-purchase/:userEmail',  async (req, res) => {
 	// more secure way: token -> user email
 	const email = req.params.userEmail
   console.log({email})
 	const query = { userEmail: email }
 	const result = await purchasesCollection.find(query).toArray()
+ 
 	res.send(result)
 })
 
@@ -601,7 +628,7 @@ app.post("/bookmarks", async (req, res) => {
 
     res.send(result);
   } catch (error) {
-    console.log(error);
+    // console.log(error);
     res.status(500).send({
       message: "Failed to bookmark ebook",
     });
@@ -611,7 +638,7 @@ app.post("/bookmarks", async (req, res) => {
 
 
 
-app.get("/bookmarks/:email", async (req, res) => {
+app.get("/bookmarks/:email",verifySessionToken, async (req, res) => {
   const email = req.params.email;
 
   const result = await bookmarksCollection.find({
@@ -623,7 +650,7 @@ app.get("/bookmarks/:email", async (req, res) => {
 
 
 
-app.delete("/bookmarks/:id", async (req, res) => {
+app.delete("/bookmarks/:id",verifySessionToken,  async (req, res) => {
   try {
     const result = await bookmarksCollection.deleteOne({
       _id: new ObjectId(req.params.id),
@@ -639,8 +666,82 @@ app.delete("/bookmarks/:id", async (req, res) => {
 
 
 
+app.get("/admin/stats", verifySessionToken, async (req, res) => {
+  try {
+    // Parallel execution for faster response
+    const [users, writers, ebooks, revenueResult] = await Promise.all([
+      usersCollection.countDocuments(),
+      usersCollection.countDocuments({ role: "writer" }),
+      ebooksCollection.countDocuments(),
+      purchasesCollection.aggregate([
+        { $group: { _id: null, total: { $sum: { $toDouble: "$amount" } } } }
+      ]).toArray()
+    ]);
+
+    res.send({
+      users,
+      writers,
+      ebooks,
+      revenue: revenueResult[0]?.total || 0,
+    });
+  } catch (error) {
+    console.error("Error in admin stats:", error);
+    res.status(500).send({ error: "Failed to load admin stats" });
+  }
+});
+
+// Admin Stats Route
 
 
+
+// app.get('/admin/stats', verifySessionToken, verifyAdmin, async (req, res) => {
+//     try {
+//         // ১. মোট কার্ডের ডাটা (Analytics Overview)
+//         const totalUsers = await usersCollection.countDocuments();
+//         const totalWriters = await usersCollection.countDocuments({ role: 'writer' });
+//         const totalEbooks = await ebooksCollection.countDocuments();
+        
+//         // সব পেমেন্ট যোগ করে রেভিনিউ হিসাব করা
+//         const payments = await paymentsCollection.find().toArray();
+//         const totalRevenue = payments.reduce((sum, p) => sum + p.amount, 0);
+
+//         // ২. Monthly Sales Chart Data (Aggregation)
+//         const monthlySales = await paymentsCollection.aggregate([
+//             {
+//                 $group: {
+//                     _id: { $month: "$date" }, // মাসের ভিত্তিতে গ্রুপ করা
+//                     total: { $sum: "$amount" }
+//                 }
+//             },
+//             { $sort: { "_id": 1 } }
+//         ]).toArray();
+
+//         // ৩. Ebooks by Genre (Pie Chart Data)
+//         const genreData = await ebooksCollection.aggregate([
+//             {
+//                 $group: {
+//                     _id: "$genre",
+//                     count: { $sum: 1 }
+//                 }
+//             }
+//         ]).toArray();
+
+//         res.send({
+//             users: totalUsers,
+//             writers: totalWriters,
+//             ebooks: totalEbooks,
+//             revenue: totalRevenue,
+//             monthlySales,
+//             genreData
+//         });
+//     } catch (error) {
+//         res.status(500).send({ message: "Error fetching stats" });
+//     }
+// });
+
+
+
+ 
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
 });
