@@ -12,7 +12,7 @@ const port = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
-// test route
+
 app.get("/", (req, res) => {
   res.send("Fable Ebook Server Running...");
 });
@@ -20,7 +20,7 @@ app.get("/", (req, res) => {
 
 const uri = process.env.MONGO_DB_URI;
 
-// client
+
 const client = new MongoClient(uri, {
   serverApi: {
     version: ServerApiVersion.v1,
@@ -43,7 +43,7 @@ const verifyToken = async (req, res, next) => {
     return res.status(401).json({ msg: "Unauthorized" });
   }
 
-  // ["Bearer", "xjasasdhsagdydsav"]
+  
 
   const token = authHeader.split(" ")[1];
 
@@ -80,7 +80,7 @@ sessionCollection = db.collection('session');
 bookmarksCollection= db.collection('bookmarksCollection')
 
 console.log("MongoDB Connected Successfully");
-console.log("DB Name:", db.databaseName);
+// console.log("DB Name:", db.databaseName);
 const verifySessionToken = async (req, res, next) => {
 
             const authHeader = req.headers?.authorization;
@@ -334,7 +334,7 @@ app.patch("/ebooks/:id/status", async (req, res) => {
 app.get("/writer/sales-history", async (req, res) => {
   try {
     const { email } = req.query;
-console.log(email)
+// console.log(email)
     if (!email) {
       return res.status(400).send({ error: "Email required" });
     }
@@ -386,7 +386,7 @@ const sales = await purchasesCollection.aggregate([
 // console.log(sales,'sales data')
     res.send(sales);
   } catch (err) {
-    console.log(err);
+    // console.log(err);
     res.status(500).send({ error: "Failed to fetch sales history" });
   }
 });
@@ -395,7 +395,7 @@ const sales = await purchasesCollection.aggregate([
 app.get("/writer/books", async (req, res) => {
   try {
     const { email } = req.query;
-    console.log(email)
+    // console.log(email)
     if (!email) {
       return res.status(400).send({ error: "Writer email is required" });
     }
@@ -538,7 +538,7 @@ coverImage: book?.coverImage || book?.image,
 console.log(result,'result')
     res.send(result);
   } catch (error) {
-    console.log(error)
+    // console.log(error)
     res.status(500).send({ error: "Purchase failed" });
   }
 });
@@ -588,7 +588,7 @@ console.log(result,'result')
 app.get('/my-purchase/:userEmail',  async (req, res) => {
 	// more secure way: token -> user email
 	const email = req.params.userEmail
-  console.log({email})
+  // console.log({email})
 	const query = { userEmail: email }
 	const result = await purchasesCollection.find(query).toArray()
  
@@ -649,7 +649,6 @@ app.get("/bookmarks/:email",verifySessionToken, async (req, res) => {
 });
 
 
-
 app.delete("/bookmarks/:id",verifySessionToken,  async (req, res) => {
   try {
     const result = await bookmarksCollection.deleteOne({
@@ -666,29 +665,7 @@ app.delete("/bookmarks/:id",verifySessionToken,  async (req, res) => {
 
 
 
-// app.get("/admin/stats", verifySessionToken, async (req, res) => {
-//   try {
-//     // Parallel execution for faster response
-//     const [users, writers, ebooks, revenueResult] = await Promise.all([
-//       usersCollection.countDocuments(),
-//       usersCollection.countDocuments({ role: "writer" }),
-//       ebooksCollection.countDocuments(),
-//       purchasesCollection.aggregate([
-//         { $group: { _id: null, total: { $sum: { $toDouble: "$amount" } } } }
-//       ]).toArray()
-//     ]);
 
-//     res.send({
-//       users,
-//       writers,
-//       ebooks,
-//       revenue: revenueResult[0]?.total || 0,
-//     });
-//   } catch (error) {
-//     console.error("Error in admin stats:", error);
-//     res.status(500).send({ error: "Failed to load admin stats" });
-//   }
-// });
 
 app.get("/admin/stats", verifySessionToken, async (req, res) => {
   try {
