@@ -758,19 +758,6 @@ app.get("/admin/stats", verifySessionToken, async (req, res) => {
 
 
 
-app.delete22("/bookmarks/:id",verifySessionToken,  async (req, res) => {
-  try {
-    const result = await bookmarksCollection.deleteOne({
-      _id: new ObjectId(req.params.id),
-    });
-
-    res.send(result);
-  } catch (error) {
-    res.status(500).send({
-      message: "Failed to remove bookmark",
-    });
-  }
-});
 
 
 
